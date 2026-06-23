@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Virtual Cube</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">virtual&nbsp;cube</span>
+    <div class="actions">
+      <label class="hold-set" title="Seconds to hold Space before a solve can start">
+        hold <input id="hold-secs" type="number" min="0" max="10" step="0.5" value="3">s
+      </label>
+      <button id="btn-scramble" title="New scramble">New</button>
+      <button id="btn-keys">⌨ Keys</button>
+      <button id="btn-clear" class="ghost">Clear session</button>
+    </div>
+  </header>
+
+  <div id="scramble" class="scramble"></div>
+
+  <main class="main">
+    <section class="play">
+      <div id="timer" class="timer">0.00</div>
+      <div id="net" class="net" aria-label="cube"></div>
+      <div id="hint" class="hint">Hold <b>Space</b> until it turns green, then release to start. <b>Esc</b> gives up · rotations allowed anytime · arrow keys rotate the view.</div>
+    </section>
+
+    <aside class="side">
+      <div class="stats">
+        <div class="stat"><label>time</label><span id="st-last">–</span></div>
+        <div class="stat"><label>best</label><span id="st-best">–</span></div>
+        <div class="stat"><label>ao5</label><span id="st-ao5">–</span></div>
+        <div class="stat"><label>ao12</label><span id="st-ao12">–</span></div>
+        <div class="stat"><label>mean</label><span id="st-mean">–</span></div>
+        <div class="stat"><label>solves</label><span id="st-count">0</span></div>
+      </div>
+      <div class="times-head">Times <span class="muted">(click to delete)</span></div>
+      <ol id="times" class="times"></ol>
+    </aside>
+  </main>
+
+  <!-- keybinding overlay -->
+  <div id="config" class="overlay hidden">
+    <div class="panel">
+      <div class="panel-head">
+        <strong>Key mapping</strong>
+        <div class="tabs">
+          <button id="tab-moves" class="tab active">Moves</button>
+          <button id="tab-kbd" class="tab">Keyboard</button>
+        </div>
+        <div class="panel-actions">
+          <button id="btn-clear-binds" class="ghost">Clear all</button>
+          <button id="btn-reset" class="ghost">Reset defaults</button>
+          <button id="btn-done">Done</button>
+        </div>
+      </div>
+      <div id="bind-status" class="bind-status">Click a move, then press a key. Backspace clears · Esc cancels.</div>
+      <div id="view-moves" class="view"></div>
+      <div id="view-kbd" class="view hidden"></div>
+    </div>
+  </div>
+
+  <!-- csTimer cube renderer + deps -->
+  <script src="vendor/jquery-1.8.0.js"></script>
+  <script src="vendor/utillib.js"></script>
+  <script src="vendor/isaac.js"></script>
+  <script src="vendor/mathlib.js"></script>
+  <script src="vendor/cubeutil.js"></script>
+  <script src="kernel-shim.js"></script>
+  <script src="vendor/puzzlefactory.js"></script>
+  <script src="vendor/threemin.js"></script>
+  <script src="vendor/pnltri.js"></script>
+  <script src="vendor/twisty.js"></script>
+  <script src="vendor/twistynnn.js"></script>
+
+  <!-- app -->
+  <script src="scramble.js"></script>
+  <script src="keybinds.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

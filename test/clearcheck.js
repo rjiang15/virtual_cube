@@ -1,0 +1,21 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch();
+  const p = await b.newPage({ viewport: { width: 1000, height: 760 } });
+  const errs=[]; p.on('pageerror',e=>errs.push(e.message));
+  await p.goto('http://localhost:8731/index.html',{waitUntil:'networkidle'});
+  await p.waitForTimeout(400);
+  await p.click('#btn-keys');
+  await p.waitForTimeout(150);
+  const before = await p.evaluate(()=>JSON.parse(localStorage.getItem('vc_keybinds')||'{}'));
+  await p.click('#btn-clear-binds');
+  await p.waitForTimeout(150);
+  const after = await p.evaluate(()=>JSON.parse(localStorage.getItem('vc_keybinds')||'{}'));
+  const boundChips = await p.$$eval('#view-moves .chip .key', els => els.filter(e=>!e.classList.contains('empty')).length);
+  await p.screenshot({ path:'test/shot-cleared.png' });
+  console.log('binds before:', Object.keys(before).length);
+  console.log('binds after :', Object.keys(after).length);
+  console.log('non-empty chips after clear:', boundChips);
+  console.log('errors:', errs.length?errs.join('; '):'none');
+  await b.close();
+})();
