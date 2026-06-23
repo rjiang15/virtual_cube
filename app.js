@@ -190,10 +190,62 @@
   }
   function loadHold() {
     try { var v = parseFloat(localStorage.getItem('vc_hold')); if (!isNaN(v)) return v; } catch (e) {}
-    return 3;
+    return 1;
   }
   function saveHold() {
     try { localStorage.setItem('vc_hold', String(holdSecs)); } catch (e) {}
+  }
+
+  // ---------- backup / restore ----------
+  // localStorage is scoped to the page's origin (scheme+host+port), so saved
+  // data "disappears" if the dev server comes back on a different port. These
+  // let you snapshot everything to a file and restore it into any origin.
+  function exportState() {
+    var data = {
+      version: 1,
+      keybinds: binds,
+      session: solves,
+      hold: holdSecs,
+    };
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    var stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = 'virtual-cube-backup-' + stamp + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function importState(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var data;
+      try { data = JSON.parse(reader.result); }
+      catch (e) { alert('Could not read that file — it is not valid backup JSON.'); return; }
+
+      if (data.keybinds && typeof data.keybinds === 'object') {
+        binds = data.keybinds;
+        persistBinds();
+      }
+      if (Array.isArray(data.session)) {
+        solves = data.session;
+        saveSession();
+        renderStats();
+      }
+      if (typeof data.hold === 'number' && !isNaN(data.hold)) {
+        holdSecs = data.hold;
+        HOLD_MS = holdSecs * 1000;
+        saveHold();
+        var hi = $id('hold-secs');
+        if (hi) hi.value = holdSecs;
+      }
+      updateBindStatus();
+      alert('Backup restored.');
+    };
+    reader.readAsText(file);
   }
 
   // ---------- input ----------
@@ -359,6 +411,13 @@
     $id('btn-done').onclick = closeConfig;
     $id('btn-clear').onclick = function () {
       if (confirm('Clear all solves in this session?')) { solves = []; saveSession(); renderStats(); }
+    };
+    $id('btn-export').onclick = exportState;
+    $id('btn-import').onclick = function () { $id('import-file').click(); };
+    $id('import-file').onchange = function (e) {
+      var f = e.target.files && e.target.files[0];
+      if (f) importState(f);
+      e.target.value = '';
     };
     $id('btn-reset').onclick = function () { binds = Object.assign({}, Keybinds.DEFAULTS); persistBinds(); };
     $id('btn-clear-binds').onclick = function () { binds = {}; listeningMove = null; updateBindStatus(); persistBinds(); };

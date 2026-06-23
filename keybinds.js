@@ -19,25 +19,19 @@
   // Human label for each token (wide moves shown with lowercase = "wide").
   function label(tok) { return tok; }
 
-  // csTimer's canonical QWERTY layout (fully remappable). Matches the keys a
-  // csTimer user already knows; every token maps to a real move.
+  // Default layout (fully remappable). Captured from a saved user config;
+  // tokens omitted here start unbound until the user maps them.
   var DEFAULTS = {
-    U: 'j', "U'": 'f',
-    D: 's', "D'": 'l',
-    R: 'i', "R'": 'k',
-    L: 'd', "L'": 'e',
-    F: 'h', "F'": 'g',
-    B: 'w', "B'": 'o',
-    M: '5', "M'": '.',
-    E: '2', "E'": '9',
-    S: '0', "S'": '1',
-    r: 'u', "r'": 'm',
-    l: 'v', "l'": 'r',
-    u: ',', "u'": 'c',
-    d: 'z', "d'": '/',
-    x: 't', "x'": 'n',
-    y: ';', "y'": 'a',
-    z: 'p', "z'": 'q',
+    U: '6', "U'": '4',
+    D: 'n', "D'": 'v',
+    R: 'y', "R'": 'h',
+    L: 'f', "L'": 'r',
+    F: 't', "F'": 'g',
+    B: '5', "B'": 'b',
+    M: 'x', "M'": 'w',
+    x: 'u', "x'": 'm',
+    y: 'j', "y'": 'd',
+    z: 's', "z'": 'a',
   };
 
   var STORE_KEY = 'vc_keybinds';

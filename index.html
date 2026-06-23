@@ -11,7 +11,7 @@
     <span class="brand">virtual&nbsp;cube</span>
     <div class="actions">
       <label class="hold-set" title="Seconds to hold Space before a solve can start">
-        hold <input id="hold-secs" type="number" min="0" max="10" step="0.5" value="3">s
+        hold <input id="hold-secs" type="number" min="0" max="10" step="0.5" value="1">s
       </label>
       <button id="btn-scramble" title="New scramble">New</button>
       <button id="btn-keys">⌨ Keys</button>
@@ -52,6 +52,9 @@
           <button id="tab-kbd" class="tab">Keyboard</button>
         </div>
         <div class="panel-actions">
+          <button id="btn-export" class="ghost" title="Download all keybinds + timer data as a backup file">Export</button>
+          <button id="btn-import" class="ghost" title="Restore keybinds + timer data from a backup file">Import</button>
+          <input id="import-file" type="file" accept="application/json,.json" hidden>
           <button id="btn-clear-binds" class="ghost">Clear all</button>
           <button id="btn-reset" class="ghost">Reset defaults</button>
           <button id="btn-done">Done</button>
