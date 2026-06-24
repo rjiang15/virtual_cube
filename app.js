@@ -31,8 +31,21 @@
 
   // ---------- trainer (OLL / PLL) state ----------
   var mode = 'solve';         // 'solve' | 'oll' | 'pll'
-  var trainerCase = null;     // current { name, alg }
+  var trainerCase = null;     // current base case { name, alg }
   var showAlg = true;         // whether the algorithm + keybinds are revealed
+
+  // Player-recorded algorithm overrides, keyed by case name ("OLL 21"), kept
+  // durable in localStorage and folded into Export/Import backups.
+  var CUSTOM_KEY = 'vc_custom_algs';
+  function loadCustom() {
+    try { return JSON.parse(localStorage.getItem(CUSTOM_KEY)) || {}; } catch (e) { return {}; }
+  }
+  function saveCustom() {
+    try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(customAlgs)); } catch (e) {}
+  }
+  var customAlgs = loadCustom();
+  var recording = false;      // true while capturing the player's own moves
+  var recordedMoves = [];     // tokens captured during recording
 
   // hold-to-start ("ready") state
   var holdSecs = loadHold();
@@ -50,8 +63,11 @@
   function moveListener(move, mstep, ts) {
     if (applyingScramble || !armed) return;
     if (mstep !== 2) return;                  // only act when a move animation finishes
-    if (mode !== 'solve') {                   // OLL/PLL trainer: advance once the case is solved
-      if (puzzleObj.isSolved() === 0) trainerSolved();
+    if (mode !== 'solve') {                   // OLL/PLL trainer
+      if (puzzleObj.isSolved() === 0) {
+        if (recording) finishRecording();     // their moves solved it -> save as the alg
+        else trainerSolved();                 // normal practice -> advance to a new case
+      }
       return;
     }
     // timer is started by the hold-to-start ritual, not by moves
@@ -123,15 +139,37 @@
   }
 
   function trainerList() { return mode === 'oll' ? LLAlgs.OLL : LLAlgs.PLL; }
+  // the algorithm in force for the current case: the player's override if any
+  function currentAlg() {
+    if (!trainerCase) return '';
+    return customAlgs[trainerCase.name] || trainerCase.alg;
+  }
+  // collapse adjacent same-face moves so a recorded "R R" reads "R2", "R R'" cancels
+  function collapseMoves(tokens) {
+    var a = tokens.slice(), changed = true, val = { '': 1, "'": -1, '2': 2 },
+        map = { 0: null, 1: '', 2: '2', 3: "'" };
+    while (changed) {
+      changed = false;
+      var o = [];
+      for (var i = 0; i < a.length; i++) {
+        var nt = normToken(a[i]), nn = a[i + 1] ? normToken(a[i + 1]) : null;
+        if (nt && nn && nt.base === nn.base) {
+          var s = (val[nt.mod] + val[nn.mod]) % 4; if (s < 0) s += 4;
+          var r = map[s];
+          if (r !== null) o.push(nt.base + r);
+          i++; changed = true; continue;
+        }
+        o.push(a[i]);
+      }
+      a = o;
+    }
+    return a;
+  }
 
-  function newTrainerCase() {
-    var list = trainerList();
-    var pick = trainerCase;
-    while (list.length > 1 && pick === trainerCase) pick = list[(Math.random() * list.length) | 0];
-    trainerCase = pick;
+  function dealCurrentCase() {
     // x2 turns the default (white-up) view to the standard yellow-on-top OLL/PLL
     // orientation; the case is dealt and solved entirely in that rotated frame.
-    var setup = ['x2'].concat(invertMoves(tokenizeAlg(trainerCase.alg)));   // scramble = inverse of the alg
+    var setup = ['x2'].concat(invertMoves(tokenizeAlg(currentAlg())));   // scramble = inverse of the alg
     armed = false;
     applyingScramble = true;
     started = false;
@@ -154,6 +192,16 @@
     renderTrainer();
   }
 
+  function newTrainerCase() {
+    recording = false; recordedMoves = [];
+    var list = trainerList();
+    var pick = trainerCase;
+    while (list.length > 1 && pick === trainerCase) pick = list[(Math.random() * list.length) | 0];
+    trainerCase = pick;
+    dealCurrentCase();
+    updateRecordUI();
+  }
+
   function trainerSolved() {
     armed = false;
     $id('trainer-bar').classList.add('solved');
@@ -163,19 +211,73 @@
     }, 400);
   }
 
+  // ---------- recording a custom algorithm ----------
+  function startRecording() {
+    if (mode === 'solve' || !trainerCase || !armed || recording) return;
+    recording = true;
+    recordedMoves = [];
+    updateRecordUI();
+    renderTrainer();
+  }
+  function cancelRecording() {
+    if (!recording) return;
+    recording = false;
+    recordedMoves = [];
+    updateRecordUI();
+    dealCurrentCase();          // re-deal a clean copy of the same case
+  }
+  function finishRecording() {
+    recording = false;
+    var alg = collapseMoves(recordedMoves).join(' ');
+    updateRecordUI();
+    if (!alg) { dealCurrentCase(); return; }
+    customAlgs[trainerCase.name] = alg;   // overwrite the stored algorithm, durably
+    saveCustom();
+    renderTrainer();
+    $id('trainer-hint').textContent = 'Saved ✓  ' + trainerCase.name + ' = ' + alg;
+    armed = false;
+    setTimeout(newTrainerCase, 1100);
+  }
+  function resetCaseAlg() {
+    if (!trainerCase || !customAlgs[trainerCase.name]) return;
+    delete customAlgs[trainerCase.name];
+    saveCustom();
+    dealCurrentCase();
+  }
+  function updateRecordUI() {
+    var btn = $id('btn-record');
+    if (!btn) return;
+    btn.textContent = recording ? '⏺ Recording — Esc to cancel' : 'Record algorithm';
+    btn.classList.toggle('recording', recording);
+    $id('btn-next').disabled = recording;
+    $id('btn-show-alg').disabled = recording;
+    var rb = $id('btn-reset-alg');
+    var hasCustom = !!(trainerCase && customAlgs[trainerCase.name]);
+    rb.classList.toggle('hidden', mode === 'solve' || recording || !hasCustom);
+  }
+
   function renderTrainer() {
     if (mode === 'solve' || !trainerCase) return;
-    $id('trainer-case').textContent = trainerCase.name;
+    var custom = !!customAlgs[trainerCase.name];
+    $id('trainer-case').innerHTML = trainerCase.name +
+      (custom ? ' <span class="custom-badge">custom</span>' : '');
     var host = $id('trainer-moves');
     host.innerHTML = '';
+    if (recording) {
+      host.className = 'trainer-moves concealed';
+      host.textContent = recordedMoves.length ? recordedMoves.join(' ')
+        : 'Make your moves — the cube saves itself the moment it is solved.';
+      $id('trainer-hint').textContent = '⏺ Recording your algorithm for ' + trainerCase.name + ' · Esc to cancel';
+      return;
+    }
     if (!showAlg) {
       host.className = 'trainer-moves concealed';
       host.textContent = 'Algorithm hidden — recall it, then press Show algorithm to check.';
-      $id('trainer-hint').textContent = 'Solve the case to load the next one · Next case to skip · Esc to skip';
+      $id('trainer-hint').textContent = 'Solve the case to load the next one · Esc to skip';
       return;
     }
     host.className = 'trainer-moves';
-    tokenizeAlg(trainerCase.alg).forEach(function (tok) {
+    tokenizeAlg(currentAlg()).forEach(function (tok) {
       var b = bindFor(tok);
       var col = document.createElement('div');
       col.className = 'movecol';
@@ -183,7 +285,9 @@
         (b.empty ? ' empty' : '') + '">' + b.text + '</span>';
       host.appendChild(col);
     });
-    $id('trainer-hint').textContent = 'Press the keys shown to solve it · a new case loads automatically';
+    $id('trainer-hint').textContent = custom
+      ? 'Your custom algorithm · Reset to default to restore the built-in one'
+      : 'Press the keys shown to solve it · Record algorithm to save your own';
   }
 
   function updateShowAlgBtn() {
@@ -203,6 +307,7 @@
     trainEls.forEach(function (el) { el.classList.toggle('hidden', !trainer); });
     cancelHold();
     started = false;
+    recording = false; recordedMoves = [];
     clearInterval(tick);
     if (trainer) {
       showAlg = true;
@@ -214,6 +319,7 @@
       renderStats();
       newScramble();
     }
+    updateRecordUI();
   }
 
   // ---------- timer ----------
@@ -353,6 +459,7 @@
       keybinds: binds,
       session: solves,
       hold: holdSecs,
+      customAlgs: customAlgs,
     };
     var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
@@ -389,6 +496,11 @@
         var hi = $id('hold-secs');
         if (hi) hi.value = holdSecs;
       }
+      if (data.customAlgs && typeof data.customAlgs === 'object') {
+        customAlgs = data.customAlgs;
+        saveCustom();
+        if (mode !== 'solve') { dealCurrentCase(); }
+      }
       updateBindStatus();
       alert('Backup restored.');
     };
@@ -403,8 +515,14 @@
   function handlePlayKey(e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     var trainer = mode !== 'solve';
-    // Esc: solve mode gives up & re-scrambles; trainer mode skips to a new case
-    if (e.key === 'Escape') { e.preventDefault(); if (trainer) newTrainerCase(); else abortSolve(); return; }
+    // Esc: cancel a recording, else trainer skips to a new case, else give up the solve
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (recording) cancelRecording();
+      else if (trainer) newTrainerCase();
+      else abortSolve();
+      return;
+    }
     var k = normKey(e);
     // spacebar drives the hold-to-start ritual (solve mode only)
     if (k === ' ') {
@@ -425,7 +543,12 @@
       } else if (!started && !isRotToken(token)) {
         return;                              // solve mode: turns blocked until started
       }
+      // capture before applying: at instant speed the move can synchronously
+      // trigger finishRecording, which must already see this final token
+      var capture = trainer && recording;
+      if (capture) recordedMoves.push(token);
       puzzleObj.twistyScene.keydown({ keyCode: TOKEN2CODE[token] });
+      if (capture && recording) renderTrainer();
     }
   }
   function handlePlayKeyUp(e) {
@@ -566,6 +689,8 @@
     $id('mode-pll').onclick = function () { setMode('pll'); };
     $id('btn-next').onclick = newTrainerCase;
     $id('btn-show-alg').onclick = function () { showAlg = !showAlg; updateShowAlgBtn(); renderTrainer(); };
+    $id('btn-record').onclick = startRecording;
+    $id('btn-reset-alg').onclick = resetCaseAlg;
     $id('btn-keys').onclick = openConfig;
     $id('btn-done').onclick = closeConfig;
     $id('btn-clear').onclick = function () {

@@ -116,6 +116,12 @@ button.active { background: var(--accent); color: #fff; border-color: var(--acce
 .movecol .kb.empty { color: #e23b3b; text-transform: none; }
 .trainer-moves.concealed { color: var(--muted); font-size: 14px; align-items: center; }
 .trainer-hint { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 16px; }
+.custom-badge {
+  font-size: 11px; font-weight: 600; vertical-align: middle; color: #fff;
+  background: var(--accent); border-radius: 5px; padding: 2px 6px; letter-spacing: .3px;
+}
+#btn-record.recording { background: #e23b3b; color: #fff; border-color: #e23b3b; }
+button:disabled { opacity: .5; cursor: default; }
 .panel {
   background: var(--panel); border-radius: 12px; width: min(900px, 96vw);
   max-height: 92vh; overflow: auto; box-shadow: 0 12px 40px rgba(0,0,0,.25);
