@@ -29,6 +29,11 @@
   var configOpen = false;
   var listeningMove = null;
 
+  // ---------- trainer (OLL / PLL) state ----------
+  var mode = 'solve';         // 'solve' | 'oll' | 'pll'
+  var trainerCase = null;     // current { name, alg }
+  var showAlg = true;         // whether the algorithm + keybinds are revealed
+
   // hold-to-start ("ready") state
   var holdSecs = loadHold();
   var HOLD_MS = holdSecs * 1000;
@@ -44,10 +49,13 @@
   // ---------- cube / scramble ----------
   function moveListener(move, mstep, ts) {
     if (applyingScramble || !armed) return;
-    // timer is started by the hold-to-start ritual, not by moves
-    if (mstep === 2 && started) {            // move animation finished
-      if (puzzleObj.isSolved() === 0) finishSolve(ts);
+    if (mstep !== 2) return;                  // only act when a move animation finishes
+    if (mode !== 'solve') {                   // OLL/PLL trainer: advance once the case is solved
+      if (puzzleObj.isSolved() === 0) trainerSolved();
+      return;
     }
+    // timer is started by the hold-to-start ritual, not by moves
+    if (started && puzzleObj.isSolved() === 0) finishSolve(ts);
   }
 
   function newScramble() {
@@ -67,6 +75,145 @@
       armed = true;
       $id('hint').classList.remove('hidden');
     });
+  }
+
+  // ---------- OLL / PLL trainer ----------
+  // Move-string helpers. Tokens are R U F B L D (with ' or 2), the M slice, and
+  // x/y/z rotations — the same set every stored algorithm is restricted to.
+  function tokenizeAlg(s) {
+    return s.replace(/[()]/g, ' ').trim().split(/\s+/).filter(Boolean);
+  }
+  function normToken(t) {
+    var m = /^([URFDLBMxyz])(['2]*)$/.exec(t);
+    if (!m) return null;
+    var mod = m[2].indexOf('2') >= 0 ? '2' : (m[2].indexOf("'") >= 0 ? "'" : '');
+    return { base: m[1], mod: mod };
+  }
+  // inverse of a move list: reverse order, flip each quarter turn (2 stays)
+  function invertMoves(tokens) {
+    return tokens.slice().reverse().map(function (t) {
+      var n = normToken(t);
+      var mod = n.mod === '2' ? '2' : (n.mod === '' ? "'" : '');
+      return n.base + mod;
+    });
+  }
+  // replay one move through csTimer's native keyboard path (handles M slices,
+  // which parseScramble/applyMoves silently drops). A double is two quarter taps.
+  function pressMove(token) {
+    var n = normToken(token);
+    if (!n || !puzzleObj) return;
+    if (n.mod === '2') { keydownToken(n.base); keydownToken(n.base); }
+    else keydownToken(n.base + (n.mod === "'" ? "'" : ''));
+  }
+  function keydownToken(tok) {
+    var code = TOKEN2CODE[tok];
+    if (code != null) puzzleObj.twistyScene.keydown({ keyCode: code });
+  }
+  // the keybind(s) the player must press for a move, given their current map
+  function bindFor(token) {
+    var n = normToken(token);
+    if (!n) return { text: '·', empty: true };
+    if (n.mod === '2') {
+      var k2 = binds[n.base];
+      return k2 ? { text: keyLabel(k2) + ' ' + keyLabel(k2), empty: false }
+                : { text: 'unset', empty: true };
+    }
+    var k = binds[n.base + (n.mod === "'" ? "'" : '')];
+    return k ? { text: keyLabel(k), empty: false } : { text: 'unset', empty: true };
+  }
+
+  function trainerList() { return mode === 'oll' ? LLAlgs.OLL : LLAlgs.PLL; }
+
+  function newTrainerCase() {
+    var list = trainerList();
+    var pick = trainerCase;
+    while (list.length > 1 && pick === trainerCase) pick = list[(Math.random() * list.length) | 0];
+    trainerCase = pick;
+    // x2 turns the default (white-up) view to the standard yellow-on-top OLL/PLL
+    // orientation; the case is dealt and solved entirely in that rotated frame.
+    var setup = ['x2'].concat(invertMoves(tokenizeAlg(trainerCase.alg)));   // scramble = inverse of the alg
+    armed = false;
+    applyingScramble = true;
+    started = false;
+    cancelHold();
+    clearInterval(tick);
+    // rebuild a solved cube, then deal the case by replaying the inverse alg.
+    // Replaying through the keyboard path is the only one that applies M slices,
+    // but it drops moves mid-animation — so deal instantly (speed 0), then restore
+    // the normal turn speed for the player's own solving.
+    var prevSpeed = kernel.getProp('vrcSpeed', 100);
+    kernel.setProp('vrcSpeed', 0);
+    puzzleFactory.init(CUBE_OPTS, moveListener, jQ('#net'), function (obj) {
+      puzzleObj = obj;
+      setup.forEach(pressMove);
+      kernel.setProp('vrcSpeed', prevSpeed);
+      puzzleObj.resize();
+      applyingScramble = false;
+      armed = true;
+    });
+    renderTrainer();
+  }
+
+  function trainerSolved() {
+    armed = false;
+    $id('trainer-bar').classList.add('solved');
+    setTimeout(function () {
+      $id('trainer-bar').classList.remove('solved');
+      newTrainerCase();
+    }, 400);
+  }
+
+  function renderTrainer() {
+    if (mode === 'solve' || !trainerCase) return;
+    $id('trainer-case').textContent = trainerCase.name;
+    var host = $id('trainer-moves');
+    host.innerHTML = '';
+    if (!showAlg) {
+      host.className = 'trainer-moves concealed';
+      host.textContent = 'Algorithm hidden — recall it, then press Show algorithm to check.';
+      $id('trainer-hint').textContent = 'Solve the case to load the next one · Next case to skip · Esc to skip';
+      return;
+    }
+    host.className = 'trainer-moves';
+    tokenizeAlg(trainerCase.alg).forEach(function (tok) {
+      var b = bindFor(tok);
+      var col = document.createElement('div');
+      col.className = 'movecol';
+      col.innerHTML = '<span class="mv">' + tok + '</span><span class="kb' +
+        (b.empty ? ' empty' : '') + '">' + b.text + '</span>';
+      host.appendChild(col);
+    });
+    $id('trainer-hint').textContent = 'Press the keys shown to solve it · a new case loads automatically';
+  }
+
+  function updateShowAlgBtn() {
+    $id('btn-show-alg').textContent = showAlg ? 'Hide algorithm' : 'Show algorithm';
+  }
+
+  function setMode(m) {
+    if (m === mode) return;
+    mode = m;
+    ['solve', 'oll', 'pll'].forEach(function (x) {
+      $id('mode-' + x).classList.toggle('active', x === m);
+    });
+    var trainer = m !== 'solve';
+    var solveEls = document.querySelectorAll('.solve-only');
+    var trainEls = document.querySelectorAll('.trainer-only');
+    solveEls.forEach(function (el) { el.classList.toggle('hidden', trainer); });
+    trainEls.forEach(function (el) { el.classList.toggle('hidden', !trainer); });
+    cancelHold();
+    started = false;
+    clearInterval(tick);
+    if (trainer) {
+      showAlg = true;
+      updateShowAlgBtn();
+      trainerCase = null;
+      newTrainerCase();
+    } else {
+      showTime(0);
+      renderStats();
+      newScramble();
+    }
   }
 
   // ---------- timer ----------
@@ -255,13 +402,14 @@
   }
   function handlePlayKey(e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    // Esc gives up: abort solve and re-scramble
-    if (e.key === 'Escape') { e.preventDefault(); abortSolve(); return; }
+    var trainer = mode !== 'solve';
+    // Esc: solve mode gives up & re-scrambles; trainer mode skips to a new case
+    if (e.key === 'Escape') { e.preventDefault(); if (trainer) newTrainerCase(); else abortSolve(); return; }
     var k = normKey(e);
-    // spacebar is reserved for the hold-to-start ritual
+    // spacebar drives the hold-to-start ritual (solve mode only)
     if (k === ' ') {
       e.preventDefault();
-      if (!e.repeat) beginHold();
+      if (!trainer && !e.repeat) beginHold();
       return;
     }
     // arrow keys rotate the camera (csTimer built-in)
@@ -272,8 +420,11 @@
     var token = rev[k];
     if (token && puzzleObj) {
       e.preventDefault();
-      // face/slice/wide turns are blocked until the solve has started; rotations always allowed
-      if (!started && !isRotToken(token)) return;
+      if (trainer) {
+        if (!armed) return;                  // wait until the case is dealt
+      } else if (!started && !isRotToken(token)) {
+        return;                              // solve mode: turns blocked until started
+      }
       puzzleObj.twistyScene.keydown({ keyCode: TOKEN2CODE[token] });
     }
   }
@@ -289,7 +440,10 @@
     persistBinds();
   }
   function clearBind(move) { delete binds[move]; persistBinds(); }
-  function persistBinds() { Keybinds.save(binds); rev = Keybinds.reverse(binds); renderConfig(); }
+  function persistBinds() {
+    Keybinds.save(binds); rev = Keybinds.reverse(binds); renderConfig();
+    if (mode !== 'solve') renderTrainer();   // keep the trainer's keybind hints in sync
+  }
 
   function renderMovesView() {
     var host = $id('view-moves');
@@ -407,6 +561,11 @@
     });
 
     $id('btn-scramble').onclick = function () { showTime(0); newScramble(); };
+    $id('mode-solve').onclick = function () { setMode('solve'); };
+    $id('mode-oll').onclick = function () { setMode('oll'); };
+    $id('mode-pll').onclick = function () { setMode('pll'); };
+    $id('btn-next').onclick = newTrainerCase;
+    $id('btn-show-alg').onclick = function () { showAlg = !showAlg; updateShowAlgBtn(); renderTrainer(); };
     $id('btn-keys').onclick = openConfig;
     $id('btn-done').onclick = closeConfig;
     $id('btn-clear').onclick = function () {

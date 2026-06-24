@@ -9,26 +9,40 @@
 <body>
   <header class="topbar">
     <span class="brand">virtual&nbsp;cube</span>
+    <nav class="modetabs">
+      <button id="mode-solve" class="modetab active">Solve</button>
+      <button id="mode-oll" class="modetab">OLL</button>
+      <button id="mode-pll" class="modetab">PLL</button>
+    </nav>
     <div class="actions">
-      <label class="hold-set" title="Seconds to hold Space before a solve can start">
+      <label class="hold-set solve-only" title="Seconds to hold Space before a solve can start">
         hold <input id="hold-secs" type="number" min="0" max="10" step="0.5" value="1">s
       </label>
-      <button id="btn-scramble" title="New scramble">New</button>
+      <button id="btn-scramble" class="solve-only" title="New scramble">New</button>
+      <button id="btn-show-alg" class="trainer-only hidden">Hide algorithm</button>
+      <button id="btn-next" class="trainer-only hidden" title="Skip to another case">Next case</button>
       <button id="btn-keys">⌨ Keys</button>
-      <button id="btn-clear" class="ghost">Clear session</button>
+      <button id="btn-clear" class="ghost solve-only">Clear session</button>
     </div>
   </header>
 
-  <div id="scramble" class="scramble"></div>
+  <div id="scramble" class="scramble solve-only"></div>
+
+  <!-- OLL/PLL trainer: case name + algorithm with per-move keybinds -->
+  <div id="trainer-bar" class="trainer-bar trainer-only hidden">
+    <div id="trainer-case" class="trainer-case"></div>
+    <div id="trainer-moves" class="trainer-moves"></div>
+    <div id="trainer-hint" class="trainer-hint"></div>
+  </div>
 
   <main class="main">
     <section class="play">
-      <div id="timer" class="timer">0.00</div>
+      <div id="timer" class="timer solve-only">0.00</div>
       <div id="net" class="net" aria-label="cube"></div>
-      <div id="hint" class="hint">Hold <b>Space</b> until it turns green, then release to start. <b>Esc</b> gives up · rotations allowed anytime · arrow keys rotate the view.</div>
+      <div id="hint" class="hint solve-only">Hold <b>Space</b> until it turns green, then release to start. <b>Esc</b> gives up · rotations allowed anytime · arrow keys rotate the view.</div>
     </section>
 
-    <aside class="side">
+    <aside class="side solve-only">
       <div class="stats">
         <div class="stat"><label>time</label><span id="st-last">–</span></div>
         <div class="stat"><label>best</label><span id="st-best">–</span></div>
@@ -82,6 +96,7 @@
   <!-- app -->
   <script src="scramble.js"></script>
   <script src="keybinds.js"></script>
+  <script src="algs.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

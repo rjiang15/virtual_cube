@@ -90,6 +90,32 @@ button.active { background: var(--accent); color: #fff; border-color: var(--acce
   display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 10;
 }
 .hidden { display: none !important; }
+
+/* mode tabs (Solve / OLL / PLL) */
+.modetabs { display: flex; gap: 6px; }
+.modetab { padding: 6px 16px; font-weight: 500; }
+.modetab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* OLL/PLL trainer bar */
+.trainer-bar { text-align: center; padding: 14px 16px 4px; }
+.trainer-case { font-size: 22px; font-weight: 600; letter-spacing: .5px; }
+.trainer-bar.solved .trainer-case { color: #1a9e3a; }
+.trainer-moves {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;
+  margin-top: 12px; min-height: 46px;
+}
+.movecol {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  min-width: 30px; padding: 4px 2px;
+}
+.movecol .mv { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.movecol .kb {
+  font-size: 12px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .5px; min-height: 14px;
+}
+.movecol .kb.empty { color: #e23b3b; text-transform: none; }
+.trainer-moves.concealed { color: var(--muted); font-size: 14px; align-items: center; }
+.trainer-hint { color: var(--muted); font-size: 13px; margin-top: 10px; min-height: 16px; }
 .panel {
   background: var(--panel); border-radius: 12px; width: min(900px, 96vw);
   max-height: 92vh; overflow: auto; box-shadow: 0 12px 40px rgba(0,0,0,.25);
