@@ -32,6 +32,9 @@
 
   <!-- OLL/PLL trainer: case name + algorithm with per-move keybinds -->
   <div id="trainer-bar" class="trainer-bar trainer-only hidden">
+    <label class="trainer-pick-label">practice
+      <select id="trainer-pick" class="trainer-pick"></select>
+    </label>
     <div id="trainer-case" class="trainer-case"></div>
     <div id="trainer-moves" class="trainer-moves"></div>
     <div id="trainer-hint" class="trainer-hint"></div>
@@ -39,7 +42,7 @@
 
   <main class="main">
     <section class="play">
-      <div id="timer" class="timer solve-only">0.00</div>
+      <div id="timer" class="timer">0.00</div>
       <div id="net" class="net" aria-label="cube"></div>
       <div id="hint" class="hint solve-only">Hold <b>Space</b> until it turns green, then release to start. <b>Esc</b> gives up · rotations allowed anytime · arrow keys rotate the view.</div>
     </section>
@@ -57,6 +60,20 @@
       </div>
       <div class="times-head">Times <span class="muted">(click to delete)</span></div>
       <ol id="times" class="times"></ol>
+    </aside>
+
+    <aside class="side trainer-only hidden">
+      <div class="stats">
+        <div class="stat"><label>best</label><span id="tr-best">–</span></div>
+        <div class="stat"><label>best tps</label><span id="tr-besttps">–</span></div>
+        <div class="stat"><label>mean</label><span id="tr-mean">–</span></div>
+        <div class="stat"><label>runs</label><span id="tr-count">0</span></div>
+      </div>
+      <div class="times-head">
+        Runs · <span id="tr-scope" class="muted">all cases</span>
+        <button id="btn-clear-runs" class="ghost mini">clear</button>
+      </div>
+      <ol id="tr-runs" class="times"></ol>
     </aside>
   </main>
 

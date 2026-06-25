@@ -34,6 +34,7 @@
   var mode = 'solve';         // 'solve' | 'oll' | 'pll'
   var trainerCase = null;     // current base case { name, alg }
   var showAlg = true;         // whether the algorithm + keybinds are revealed
+  var drillName = '';         // '' = random; otherwise a case name to repeat
 
   // Player-recorded algorithm overrides, keyed by case name ("OLL 21"), kept
   // durable in localStorage and folded into Export/Import backups.
@@ -48,6 +49,16 @@
   var customAlgs = loadCustom();
   var recording = false;      // true while capturing the player's own moves
   var recordedMoves = [];     // tokens captured during recording
+
+  // Timed OLL/PLL run history (the trainer's record board), durable like solves.
+  function loadTrainerRuns() {
+    try { return JSON.parse(localStorage.getItem('vc_trainer_runs')) || []; } catch (e) { return []; }
+  }
+  function saveTrainerRuns() {
+    try { localStorage.setItem('vc_trainer_runs', JSON.stringify(trainerRuns)); } catch (e) {}
+    persist();
+  }
+  var trainerRuns = loadTrainerRuns();
 
   // hold-to-start ("ready") state
   var holdSecs = loadHold();
@@ -66,9 +77,13 @@
     if (applyingScramble || !armed) return;
     if (mstep !== 2) return;                  // only act when a move animation finishes
     if (mode !== 'solve') {                   // OLL/PLL trainer
-      if (puzzleObj.isSolved() === 0) {
-        if (recording) finishRecording();     // their moves solved it -> save as the alg
-        else trainerSolved();                 // normal practice -> advance to a new case
+      if (recording) {
+        if (puzzleObj.isSolved() === 0) finishRecording();   // their moves solved it -> save
+        return;
+      }
+      if (started) {                          // a timed run is underway
+        if (!puzzleObj.isRotation(move)) moveCount++;
+        if (puzzleObj.isSolved() === 0) finishTrainerRun(ts);
       }
       return;
     }
@@ -180,6 +195,7 @@
     started = false;
     cancelHold();
     clearInterval(tick);
+    showTime(0);                // reset the run timer for this case
     // rebuild a solved cube, then deal the case by replaying the inverse alg.
     // Replaying through the keyboard path is the only one that applies M slices,
     // but it drops moves mid-animation — so deal instantly (speed 0), then restore
@@ -197,28 +213,98 @@
     renderTrainer();
   }
 
+  function findCase(name) {
+    var list = trainerList();
+    for (var i = 0; i < list.length; i++) if (list[i].name === name) return list[i];
+    return null;
+  }
   function newTrainerCase() {
     recording = false; recordedMoves = [];
     var list = trainerList();
-    var pick = trainerCase;
-    while (list.length > 1 && pick === trainerCase) pick = list[(Math.random() * list.length) | 0];
-    trainerCase = pick;
+    if (drillName) {
+      trainerCase = findCase(drillName) || trainerCase;   // repeat the chosen case
+    } else {
+      var pick = trainerCase;
+      while (list.length > 1 && pick === trainerCase) pick = list[(Math.random() * list.length) | 0];
+      trainerCase = pick;
+    }
     dealCurrentCase();
     updateRecordUI();
   }
 
-  function trainerSolved() {
+  // a timed run finished (the case was solved); record it, show it, then re-deal
+  function finishTrainerRun(ts) {
+    clearInterval(tick);
+    started = false;
     armed = false;
+    var ms = (ts || nowMs()) - startTime;
+    var turns = moveCount;
+    var tps = ms > 0 ? turns / (ms / 1000) : 0;
+    showTime(ms, 'done');
+    trainerRuns.push({ caseName: trainerCase.name, ms: ms, turns: turns, tps: tps, ts: Date.now() });
+    saveTrainerRuns();
+    renderTrainerBoard();
     $id('trainer-bar').classList.add('solved');
+    $id('trainer-hint').textContent = '✓ ' + fmt(ms) + 's · ' + turns + ' moves · ' + tps.toFixed(2) + ' tps';
     setTimeout(function () {
       $id('trainer-bar').classList.remove('solved');
       newTrainerCase();
-    }, 400);
+    }, 1200);
+  }
+
+  // the trainer's record board: stats over the runs that match the current
+  // selection (a specific case when drilling, otherwise the whole session)
+  function runsInScope() {
+    if (drillName) return trainerRuns.filter(function (r) { return r.caseName === drillName; });
+    return trainerRuns;
+  }
+  function renderTrainerBoard() {
+    var runs = runsInScope();
+    var n = runs.length;
+    var times = runs.map(function (r) { return r.ms; });
+    var best = n ? Math.min.apply(null, times) : null;
+    var bestTps = n ? Math.max.apply(null, runs.map(function (r) { return r.tps; })) : null;
+    var mean = n ? times.reduce(function (a, b) { return a + b; }, 0) / n : null;
+    $id('tr-best').textContent = fmt(best);
+    $id('tr-besttps').textContent = bestTps != null ? bestTps.toFixed(2) : '–';
+    $id('tr-mean').textContent = fmt(mean);
+    $id('tr-count').textContent = n;
+    $id('tr-scope').textContent = drillName ? drillName : 'all cases';
+
+    var ol = $id('tr-runs');
+    ol.innerHTML = '';
+    // index runs newest-first; deletion targets the entry in the full array
+    for (var i = trainerRuns.length - 1; i >= 0; i--) {
+      var r = trainerRuns[i];
+      if (drillName && r.caseName !== drillName) continue;
+      (function (idx, run) {
+        var li = document.createElement('li');
+        li.innerHTML = '<span class="idx">' + run.caseName + '</span>' +
+          '<span>' + fmt(run.ms) + '</span>' +
+          '<span class="solve-meta">' + run.turns + ' · ' + run.tps.toFixed(2) + ' tps</span>';
+        li.title = run.caseName + ' · ' + fmt(run.ms) + 's · ' + run.turns + ' moves · ' +
+          run.tps.toFixed(2) + ' tps\n(click to delete)';
+        li.onclick = function () { trainerRuns.splice(idx, 1); saveTrainerRuns(); renderTrainerBoard(); };
+        ol.appendChild(li);
+      })(i, r);
+    }
+  }
+  function clearTrainerRuns() {
+    if (!trainerRuns.length) return;
+    var scoped = drillName ? 'runs for ' + drillName : 'all trainer runs';
+    if (!confirm('Clear ' + scoped + '?')) return;
+    trainerRuns = drillName
+      ? trainerRuns.filter(function (r) { return r.caseName !== drillName; })
+      : [];
+    saveTrainerRuns();
+    renderTrainerBoard();
   }
 
   // ---------- recording a custom algorithm ----------
   function startRecording() {
-    if (mode === 'solve' || !trainerCase || !armed || recording) return;
+    if (mode === 'solve' || !trainerCase || !armed || recording || started) return;
+    cancelHold();
+    showTime(0);
     recording = true;
     recordedMoves = [];
     updateRecordUI();
@@ -278,7 +364,7 @@
     if (!showAlg) {
       host.className = 'trainer-moves concealed';
       host.textContent = 'Algorithm hidden — recall it, then press Show algorithm to check.';
-      $id('trainer-hint').textContent = 'Solve the case to load the next one · Esc to skip';
+      $id('trainer-hint').textContent = 'Hold Space to start, then recall the algorithm · Esc to skip';
       return;
     }
     host.className = 'trainer-moves';
@@ -290,9 +376,28 @@
         (b.empty ? ' empty' : '') + '">' + b.text + '</span>';
       host.appendChild(col);
     });
-    $id('trainer-hint').textContent = custom
-      ? 'Your custom algorithm · Reset to default to restore the built-in one'
-      : 'Press the keys shown to solve it · Record algorithm to save your own';
+    $id('trainer-hint').textContent = 'Hold Space to start the timer, then perform the algorithm'
+      + (custom ? ' · custom alg (Reset to default to restore)' : '');
+  }
+
+  function populateTrainerPick() {
+    var sel = $id('trainer-pick');
+    sel.innerHTML = '';
+    var opt = document.createElement('option');
+    opt.value = ''; opt.textContent = 'Random';
+    sel.appendChild(opt);
+    trainerList().forEach(function (c) {
+      var o = document.createElement('option');
+      o.value = c.name; o.textContent = c.name;
+      sel.appendChild(o);
+    });
+    sel.value = drillName;
+  }
+  function onPickCase() {
+    drillName = $id('trainer-pick').value;
+    renderTrainerBoard();                     // board scope follows the selection
+    if (drillName) { trainerCase = findCase(drillName) || trainerCase; dealCurrentCase(); updateRecordUI(); }
+    else newTrainerCase();
   }
 
   function updateShowAlgBtn() {
@@ -318,6 +423,10 @@
       showAlg = true;
       updateShowAlgBtn();
       trainerCase = null;
+      drillName = '';
+      populateTrainerPick();
+      renderTrainerBoard();
+      showTime(0);
       newTrainerCase();
     } else {
       showTime(0);
@@ -470,7 +579,8 @@
   // ---------- durable storage: state.json in the repo (source of truth),
   // with localStorage kept as an offline mirror/fallback ----------
   function snapshot() {
-    return { version: 1, keybinds: binds, hold: holdSecs, session: solves, customAlgs: customAlgs };
+    return { version: 1, keybinds: binds, hold: holdSecs, session: solves,
+      customAlgs: customAlgs, trainerRuns: trainerRuns };
   }
   var persistTimer = null;
   function postState() {
@@ -491,6 +601,7 @@
     if (typeof s.hold === 'number' && !isNaN(s.hold)) { holdSecs = s.hold; HOLD_MS = holdSecs * 1000; }
     if (Array.isArray(s.session)) solves = s.session;
     if (s.customAlgs && typeof s.customAlgs === 'object') customAlgs = s.customAlgs;
+    if (Array.isArray(s.trainerRuns)) trainerRuns = s.trainerRuns;
   }
   // On load, prefer the repo's state.json; if it's empty (first run, or a static
   // server with no /api/state), seed it from whatever localStorage already held.
@@ -516,6 +627,7 @@
       session: solves,
       hold: holdSecs,
       customAlgs: customAlgs,
+      trainerRuns: trainerRuns,
     };
     var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
@@ -557,6 +669,10 @@
         saveCustom();
         if (mode !== 'solve') { dealCurrentCase(); }
       }
+      if (Array.isArray(data.trainerRuns)) {
+        trainerRuns = data.trainerRuns;
+        if (mode !== 'solve') renderTrainerBoard();
+      }
       persist();              // push the imported state to state.json too
       updateBindStatus();
       alert('Backup restored.');
@@ -581,10 +697,10 @@
       return;
     }
     var k = normKey(e);
-    // spacebar drives the hold-to-start ritual (solve mode only)
+    // spacebar drives the hold-to-start ritual (solve mode + timed trainer runs)
     if (k === ' ') {
       e.preventDefault();
-      if (!trainer && !e.repeat) beginHold();
+      if (!e.repeat && !recording) beginHold();
       return;
     }
     // arrow keys rotate the camera (csTimer built-in)
@@ -597,6 +713,8 @@
       e.preventDefault();
       if (trainer) {
         if (!armed) return;                  // wait until the case is dealt
+        // timed run: turns blocked until you hold-start (rotations & recording are free)
+        if (!recording && !started && !isRotToken(token)) return;
       } else if (!started && !isRotToken(token)) {
         return;                              // solve mode: turns blocked until started
       }
@@ -749,6 +867,8 @@
     $id('btn-show-alg').onclick = function () { showAlg = !showAlg; updateShowAlgBtn(); renderTrainer(); };
     $id('btn-record').onclick = startRecording;
     $id('btn-reset-alg').onclick = resetCaseAlg;
+    $id('trainer-pick').onchange = onPickCase;
+    $id('btn-clear-runs').onclick = clearTrainerRuns;
     $id('btn-keys').onclick = openConfig;
     $id('btn-done').onclick = closeConfig;
     $id('btn-clear').onclick = function () {
