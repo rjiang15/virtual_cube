@@ -21,6 +21,7 @@
   var scr = '';
   var started = false;
   var startTime = 0;
+  var moveCount = 0;          // face/slice turns made during the current solve
   var tick = null;
   var solves = loadSession();
 
@@ -42,6 +43,7 @@
   }
   function saveCustom() {
     try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(customAlgs)); } catch (e) {}
+    persist();
   }
   var customAlgs = loadCustom();
   var recording = false;      // true while capturing the player's own moves
@@ -71,7 +73,10 @@
       return;
     }
     // timer is started by the hold-to-start ritual, not by moves
-    if (started && puzzleObj.isSolved() === 0) finishSolve(ts);
+    if (started) {
+      if (!puzzleObj.isRotation(move)) moveCount++;   // count turns, not x/y/z rotations
+      if (puzzleObj.isSolved() === 0) finishSolve(ts);
+    }
   }
 
   function newScramble() {
@@ -343,6 +348,7 @@
   function startTimer(ts) {
     started = true;
     startTime = ts || nowMs();
+    moveCount = 0;             // start counting turns fresh for this solve
     $id('hint').classList.add('hidden');
     showTime(0, 'running');
     tick = setInterval(function () {
@@ -392,8 +398,10 @@
     started = false;
     armed = false;
     var ms = (ts || nowMs()) - startTime;
+    var turns = moveCount;
+    var tps = ms > 0 ? turns / (ms / 1000) : 0;
     showTime(ms, 'done');
-    solves.push({ ms: ms, scramble: scr, ts: Date.now() });
+    solves.push({ ms: ms, scramble: scr, ts: Date.now(), turns: turns, tps: tps });
     saveSession();
     renderStats();
     setTimeout(newScramble, 60);   // keep finished time on screen until next move
@@ -410,23 +418,31 @@
   }
   function renderStats() {
     var n = solves.length;
-    var last = n ? solves[n - 1].ms : null;
+    var lastSolve = n ? solves[n - 1] : null;
     var best = n ? Math.min.apply(null, solves.map(function (s) { return s.ms; })) : null;
     var mean = n ? solves.reduce(function (a, s) { return a + s.ms; }, 0) / n : null;
-    $id('st-last').textContent = fmt(last);
+    $id('st-last').textContent = fmt(lastSolve ? lastSolve.ms : null);
     $id('st-best').textContent = fmt(best);
     $id('st-ao5').textContent = fmt(avgOfN(5));
     $id('st-ao12').textContent = fmt(avgOfN(12));
     $id('st-mean').textContent = fmt(mean);
     $id('st-count').textContent = n;
+    // last solve's turn count + turns-per-second (older solves may not have them)
+    $id('st-moves').textContent = (lastSolve && lastSolve.turns != null) ? lastSolve.turns : '–';
+    $id('st-tps').textContent = (lastSolve && lastSolve.tps != null) ? lastSolve.tps.toFixed(2) : '–';
 
     var ol = $id('times');
     ol.innerHTML = '';
     for (var i = solves.length - 1; i >= 0; i--) {
       (function (idx) {
+        var s = solves[idx];
+        var meta = (s.turns != null)
+          ? s.turns + ' moves · ' + s.tps.toFixed(2) + ' tps'
+          : '';
         var li = document.createElement('li');
-        li.innerHTML = '<span class="idx">' + (idx + 1) + '.</span><span>' + fmt(solves[idx].ms) + '</span>';
-        li.title = solves[idx].scramble + '\n(click to delete)';
+        li.innerHTML = '<span class="idx">' + (idx + 1) + '.</span><span>' + fmt(s.ms) + '</span>' +
+          (meta ? '<span class="solve-meta">' + meta + '</span>' : '');
+        li.title = s.scramble + (meta ? '\n' + meta : '') + '\n(click to delete)';
         li.onclick = function () { solves.splice(idx, 1); saveSession(); renderStats(); };
         ol.appendChild(li);
       })(i);
@@ -440,6 +456,7 @@
   }
   function saveSession() {
     try { localStorage.setItem('vc_session', JSON.stringify(solves)); } catch (e) {}
+    persist();
   }
   function loadHold() {
     try { var v = parseFloat(localStorage.getItem('vc_hold')); if (!isNaN(v)) return v; } catch (e) {}
@@ -447,6 +464,45 @@
   }
   function saveHold() {
     try { localStorage.setItem('vc_hold', String(holdSecs)); } catch (e) {}
+    persist();
+  }
+
+  // ---------- durable storage: state.json in the repo (source of truth),
+  // with localStorage kept as an offline mirror/fallback ----------
+  function snapshot() {
+    return { version: 1, keybinds: binds, hold: holdSecs, session: solves, customAlgs: customAlgs };
+  }
+  var persistTimer = null;
+  function postState() {
+    try {
+      fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snapshot())
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  // debounced write to state.json; each save* writes its localStorage key directly
+  function persist() { clearTimeout(persistTimer); persistTimer = setTimeout(postState, 250); }
+
+  function applyState(s) {
+    if (!s || typeof s !== 'object') return;
+    if (s.keybinds && typeof s.keybinds === 'object') { binds = s.keybinds; rev = Keybinds.reverse(binds); }
+    if (typeof s.hold === 'number' && !isNaN(s.hold)) { holdSecs = s.hold; HOLD_MS = holdSecs * 1000; }
+    if (Array.isArray(s.session)) solves = s.session;
+    if (s.customAlgs && typeof s.customAlgs === 'object') customAlgs = s.customAlgs;
+  }
+  // On load, prefer the repo's state.json; if it's empty (first run, or a static
+  // server with no /api/state), seed it from whatever localStorage already held.
+  function bootstrap() {
+    fetch('/api/state', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (server) {
+        if (server && Object.keys(server).length) applyState(server);
+        else postState();
+        init();
+      });
   }
 
   // ---------- backup / restore ----------
@@ -501,6 +557,7 @@
         saveCustom();
         if (mode !== 'solve') { dealCurrentCase(); }
       }
+      persist();              // push the imported state to state.json too
       updateBindStatus();
       alert('Backup restored.');
     };
@@ -566,6 +623,7 @@
   function persistBinds() {
     Keybinds.save(binds); rev = Keybinds.reverse(binds); renderConfig();
     if (mode !== 'solve') renderTrainer();   // keep the trainer's keybind hints in sync
+    persist();
   }
 
   function renderMovesView() {
@@ -718,6 +776,6 @@
     $id('view-kbd').classList.toggle('hidden', m);
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootstrap);
+  else bootstrap();
 })();

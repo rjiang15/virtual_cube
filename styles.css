@@ -78,11 +78,12 @@ button.active { background: var(--accent); color: #fff; border-color: var(--acce
 .times { list-style: none; margin: 0; padding: 0; overflow: auto; max-height: 46vh;
   border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .times li {
-  display: flex; justify-content: space-between; padding: 6px 10px;
+  display: flex; align-items: baseline; gap: 8px; padding: 6px 10px;
   border-bottom: 1px solid var(--line); cursor: pointer; font-variant-numeric: tabular-nums;
 }
 .times li:hover { background: #fff0f0; }
-.times li .idx { color: var(--muted); }
+.times li .idx { color: var(--muted); margin-right: auto; }
+.times li .solve-meta { color: var(--muted); font-size: 11px; }
 
 /* overlay / config */
 .overlay {
